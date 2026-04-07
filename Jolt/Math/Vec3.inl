@@ -879,12 +879,12 @@ Vec3 Vec3::Cross(Vec3Arg inV2) const
 Vec3 Vec3::DotV(Vec3Arg inV2) const
 {
 #if defined(JPH_USE_SSE4_1)
-	__m128 mul = _mm_mul_ps(mValue, inV2.mValue);
-	mul = _mm_blend_ps(mul, _mm_setzero_ps(), 0x8);
-	__m128 shuf = _mm_movehdup_ps(mul);
-	__m128 sums = _mm_add_ps(mul, shuf);
-	shuf = _mm_movehl_ps(shuf, sums);
-	sums = _mm_add_ss(sums, shuf);
+	// see also Vec3::Dot for detailed explanations
+	Type mul = _mm_mul_ps(mValue, inV2.mValue);
+	Type shuf = _mm_movehdup_ps(mul);
+	Type sums = _mm_add_ps(mul, shuf);
+	shuf = _mm_movehl_ps(mul, mul);
+	sums = _mm_add_ps(sums, shuf);
 	return _mm_shuffle_ps(sums, sums, _MM_SHUFFLE(0, 0, 0, 0));
 #elif defined(JPH_USE_NEON)
 	float32x4_t mul = vmulq_f32(mValue, inV2.mValue);
@@ -911,12 +911,12 @@ Vec3 Vec3::DotV(Vec3Arg inV2) const
 Vec4 Vec3::DotV4(Vec3Arg inV2) const
 {
 #if defined(JPH_USE_SSE4_1)
-	__m128 mul = _mm_mul_ps(mValue, inV2.mValue);
-	mul = _mm_blend_ps(mul, _mm_setzero_ps(), 0x8);
-	__m128 shuf = _mm_movehdup_ps(mul);
-	__m128 sums = _mm_add_ps(mul, shuf);
-	shuf = _mm_movehl_ps(shuf, sums);
-	sums = _mm_add_ss(sums, shuf);
+	// see also Vec3::Dot for detailed explanations
+	Type mul = _mm_mul_ps(mValue, inV2.mValue);
+	Type shuf = _mm_movehdup_ps(mul);
+	Type sums = _mm_add_ps(mul, shuf);
+	shuf = _mm_movehl_ps(mul, mul);
+	sums = _mm_add_ps(sums, shuf);
 	return _mm_shuffle_ps(sums, sums, _MM_SHUFFLE(0, 0, 0, 0));
 #elif defined(JPH_USE_NEON)
 	float32x4_t mul = vmulq_f32(mValue, inV2.mValue);
@@ -943,12 +943,29 @@ Vec4 Vec3::DotV4(Vec3Arg inV2) const
 float Vec3::Dot(Vec3Arg inV2) const
 {
 #if defined(JPH_USE_SSE4_1)
-	__m128 mul = _mm_mul_ps(mValue, inV2.mValue);
-	mul = _mm_blend_ps(mul, _mm_setzero_ps(), 0x8);
-	__m128 shuf = _mm_movehdup_ps(mul);
-	__m128 sums = _mm_add_ps(mul, shuf);
-	shuf = _mm_movehl_ps(shuf, sums);
-	sums = _mm_add_ss(sums, shuf);
+	// Dont' use _mm_dp_ps here as that is high-latency / low throughput.
+	// Carefully orchestrate the reduction stage (horizontal sum)
+	// to minimize latency and number of uOps issued. 
+
+	// mul[3] is in an undefined state
+	Type mul = _mm_mul_ps(mValue, inV2.mValue);
+	// mul[1] -> shuf[0], don't care about the remainder
+	Type shuf = _mm_movehdup_ps(mul);
+
+	// sums[0] = mul[0] + mul[1]
+	// Clang 21.1 sometimes generates inefficient code using vhaddps
+	// and vinsertps at the calling side.  Using _mm_add_ps instead
+	// of _mm_add_ss appears to prevent this.
+	//
+	// Throughput- and latency-wise, there is no difference between
+	// both instructions.
+	Type sums = _mm_add_ps(mul, shuf);
+	// mul[2] -> shuf[0], don't care about the remainder
+	shuf = _mm_movehl_ps(mul, mul);
+	// sums[0] = mul[0] + mul[1] + mul[2]
+	// Again, can't use _mm_add_ss here.
+	sums = _mm_add_ps(sums, shuf);
+
 	return _mm_cvtss_f32(sums);
 #elif defined(JPH_USE_NEON)
 	float32x4_t mul = vmulq_f32(mValue, inV2.mValue);
@@ -972,12 +989,12 @@ float Vec3::Dot(Vec3Arg inV2) const
 float Vec3::LengthSq() const
 {
 #if defined(JPH_USE_SSE4_1)
-	__m128 mul = _mm_mul_ps(mValue, mValue);
-	mul = _mm_blend_ps(mul, _mm_setzero_ps(), 0x8);
-	__m128 shuf = _mm_movehdup_ps(mul);
-	__m128 sums = _mm_add_ps(mul, shuf);
-	shuf = _mm_movehl_ps(shuf, sums);
-	sums = _mm_add_ss(sums, shuf);
+	// see also Vec3::Dot for detailed explanations
+	Type mul = _mm_mul_ps(mValue, mValue);
+	Type shuf = _mm_movehdup_ps(mul);
+	Type sums = _mm_add_ps(mul, shuf);
+	shuf = _mm_movehl_ps(mul, mul);
+	sums = _mm_add_ps(sums, shuf);
 	return _mm_cvtss_f32(sums);
 #elif defined(JPH_USE_NEON)
 	float32x4_t mul = vmulq_f32(mValue, mValue);
@@ -1000,13 +1017,13 @@ float Vec3::LengthSq() const
 float Vec3::Length() const
 {
 #if defined(JPH_USE_SSE4_1)
-	__m128 mul = _mm_mul_ps(mValue, mValue);
-	mul = _mm_blend_ps(mul, _mm_setzero_ps(), 0x8);
-	__m128 shuf = _mm_movehdup_ps(mul);
-	__m128 sums = _mm_add_ps(mul, shuf);
-	shuf = _mm_movehl_ps(shuf, sums);
-	sums = _mm_add_ss(sums, shuf);
-	return _mm_cvtss_f32(_mm_sqrt_ss(sums));
+	// see also Vec3::Dot for detailed explanations
+	Type mul = _mm_mul_ps(mValue, mValue);
+	Type shuf = _mm_movehdup_ps(mul);
+	Type sums = _mm_add_ps(mul, shuf);
+	shuf = _mm_movehl_ps(mul, mul);
+	sums = _mm_add_ps(sums, shuf);
+	return _mm_cvtss_f32(_mm_sqrt_ps(sums));
 #elif defined(JPH_USE_NEON)
 	float32x4_t mul = vmulq_f32(mValue, mValue);
 	mul = vsetq_lane_f32(0, mul, 3);
@@ -1044,12 +1061,12 @@ Vec3 Vec3::Sqrt() const
 Vec3 Vec3::Normalized() const
 {
 #if defined(JPH_USE_SSE4_1)
-	__m128 mul = _mm_mul_ps(mValue, mValue);
-	mul = _mm_blend_ps(mul, _mm_setzero_ps(), 0x8);
-	__m128 shuf = _mm_movehdup_ps(mul);
-	__m128 sums = _mm_add_ps(mul, shuf);
-	shuf = _mm_movehl_ps(shuf, sums);
-	sums = _mm_add_ss(sums, shuf);
+	// see also Vec3::Dot for detailed explanations
+	Type mul = _mm_mul_ps(mValue, mValue);
+	Type shuf = _mm_movehdup_ps(mul);
+	Type sums = _mm_add_ps(mul, shuf);
+	shuf = _mm_movehl_ps(mul, mul);
+	sums = _mm_add_ps(sums, shuf);
 	return _mm_div_ps(mValue, _mm_sqrt_ps(_mm_shuffle_ps(sums, sums, _MM_SHUFFLE(0, 0, 0, 0))));
 #elif defined(JPH_USE_NEON)
 	float32x4_t mul = vmulq_f32(mValue, mValue);
@@ -1076,12 +1093,12 @@ Vec3 Vec3::Normalized() const
 Vec3 Vec3::NormalizedOr(Vec3Arg inZeroValue) const
 {
 #if defined(JPH_USE_SSE4_1) && !defined(JPH_PLATFORM_WASM) // _mm_blendv_ps has problems on FireFox
-	__m128 mul = _mm_mul_ps(mValue, mValue);
-	mul = _mm_blend_ps(mul, _mm_setzero_ps(), 0x8);
-	__m128 shuf = _mm_movehdup_ps(mul);
-	__m128 sums = _mm_add_ps(mul, shuf);
-	shuf = _mm_movehl_ps(shuf, sums);
-	sums = _mm_add_ss(sums, shuf);
+	// see also Vec3::Dot for detailed explanations
+	Type mul = _mm_mul_ps(mValue, mValue);
+	Type shuf = _mm_movehdup_ps(mul);
+	Type sums = _mm_add_ps(mul, shuf);
+	shuf = _mm_movehl_ps(mul, mul);
+	sums = _mm_add_ps(sums, shuf);
 	Type len_sq = _mm_shuffle_ps(sums, sums, _MM_SHUFFLE(0, 0, 0, 0));
 	// clang with '-ffast-math' (which you should not use!) can generate _mm_rsqrt_ps
 	// instructions which produce INFs/NaNs when they get a denormal float as input.
