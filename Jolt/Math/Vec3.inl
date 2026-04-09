@@ -884,6 +884,9 @@ Vec3 Vec3::DotV(Vec3Arg inV2) const
 	Type shuf = _mm_movehdup_ps(mul);
 	Type sums = _mm_add_ps(mul, shuf);
 	shuf = _mm_movehl_ps(mul, mul);
+#if JPH_CROSS_PLATFORM_DETERMINISTIC
+	shuf = _mm_add_ps(_mm_setzero_ps(), shuf);
+#endif
 	sums = _mm_add_ps(sums, shuf);
 	return _mm_shuffle_ps(sums, sums, _MM_SHUFFLE(0, 0, 0, 0));
 #elif defined(JPH_USE_NEON)
@@ -916,6 +919,9 @@ Vec4 Vec3::DotV4(Vec3Arg inV2) const
 	Type shuf = _mm_movehdup_ps(mul);
 	Type sums = _mm_add_ps(mul, shuf);
 	shuf = _mm_movehl_ps(mul, mul);
+#if JPH_CROSS_PLATFORM_DETERMINISTIC
+	shuf = _mm_add_ps(_mm_setzero_ps(), shuf);
+#endif
 	sums = _mm_add_ps(sums, shuf);
 	return _mm_shuffle_ps(sums, sums, _MM_SHUFFLE(0, 0, 0, 0));
 #elif defined(JPH_USE_NEON)
@@ -962,6 +968,15 @@ float Vec3::Dot(Vec3Arg inV2) const
 	Type sums = _mm_add_ps(mul, shuf);
 	// mul[2] -> shuf[0], don't care about the remainder
 	shuf = _mm_movehl_ps(mul, mul);
+#if JPH_CROSS_PLATFORM_DETERMINISTIC
+	// The result of the multiplication may be "-0.0" on all lanes.
+	// Summing them up still yields "-0.0".
+	// The expected representation is "+0.0", however (same numeric value,
+	// different bit pattern).
+	// We add a "+0" to flip the bit of the last summand in that case,
+	// causing the whole sum to be normalized to "+0.0".
+	shuf = _mm_add_ps(_mm_setzero_ps(), shuf);
+#endif
 	// sums[0] = mul[0] + mul[1] + mul[2]
 	// Again, can't use _mm_add_ss here.
 	sums = _mm_add_ps(sums, shuf);
@@ -994,6 +1009,9 @@ float Vec3::LengthSq() const
 	Type shuf = _mm_movehdup_ps(mul);
 	Type sums = _mm_add_ps(mul, shuf);
 	shuf = _mm_movehl_ps(mul, mul);
+#if JPH_CROSS_PLATFORM_DETERMINISTIC
+	shuf = _mm_add_ps(_mm_setzero_ps(), shuf);
+#endif
 	sums = _mm_add_ps(sums, shuf);
 	return _mm_cvtss_f32(sums);
 #elif defined(JPH_USE_NEON)
@@ -1022,6 +1040,9 @@ float Vec3::Length() const
 	Type shuf = _mm_movehdup_ps(mul);
 	Type sums = _mm_add_ps(mul, shuf);
 	shuf = _mm_movehl_ps(mul, mul);
+#if JPH_CROSS_PLATFORM_DETERMINISTIC
+	shuf = _mm_add_ps(_mm_setzero_ps(), shuf);
+#endif
 	sums = _mm_add_ps(sums, shuf);
 	return _mm_cvtss_f32(_mm_sqrt_ps(sums));
 #elif defined(JPH_USE_NEON)
@@ -1066,6 +1087,9 @@ Vec3 Vec3::Normalized() const
 	Type shuf = _mm_movehdup_ps(mul);
 	Type sums = _mm_add_ps(mul, shuf);
 	shuf = _mm_movehl_ps(mul, mul);
+#if JPH_CROSS_PLATFORM_DETERMINISTIC
+	shuf = _mm_add_ps(_mm_setzero_ps(), shuf);
+#endif
 	sums = _mm_add_ps(sums, shuf);
 	return _mm_div_ps(mValue, _mm_sqrt_ps(_mm_shuffle_ps(sums, sums, _MM_SHUFFLE(0, 0, 0, 0))));
 #elif defined(JPH_USE_NEON)
@@ -1098,6 +1122,9 @@ Vec3 Vec3::NormalizedOr(Vec3Arg inZeroValue) const
 	Type shuf = _mm_movehdup_ps(mul);
 	Type sums = _mm_add_ps(mul, shuf);
 	shuf = _mm_movehl_ps(mul, mul);
+#if JPH_CROSS_PLATFORM_DETERMINISTIC
+	shuf = _mm_add_ps(_mm_setzero_ps(), shuf);
+#endif
 	sums = _mm_add_ps(sums, shuf);
 	Type len_sq = _mm_shuffle_ps(sums, sums, _MM_SHUFFLE(0, 0, 0, 0));
 	// clang with '-ffast-math' (which you should not use!) can generate _mm_rsqrt_ps
